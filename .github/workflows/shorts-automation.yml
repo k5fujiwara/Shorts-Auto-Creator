@@ -25,10 +25,10 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
-      - name: Install FFmpeg
+      - name: Install system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-noto-core
 
       - name: Restore runtime secrets
         env:
