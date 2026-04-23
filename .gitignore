@@ -1,0 +1,6 @@
+_pycache_
+.venv
+.env
+client_secrets.json
+token.pickle
+posted_articles.json
