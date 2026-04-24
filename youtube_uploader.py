@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pickle
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,6 +60,85 @@ def normalize_title(raw_title: str) -> str:
     return final_title[:100].rstrip()
 
 
+def normalize_summary(raw_summary: str) -> str:
+    summary = cleanup_model_text(raw_summary)
+    summary = " ".join(summary.replace("\n", " ").split()).strip()
+    return summary
+
+
+def extract_first_sentences(text: str, limit: int = 2) -> str:
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(text.split()))
+    picked = [sentence.strip() for sentence in sentences if sentence.strip()][:limit]
+    return " ".join(picked).strip()
+
+
+def build_fallback_title(narration: str) -> str:
+    sentence = extract_first_sentences(narration, limit=1)
+    words = re.findall(r"[A-Za-z']+", sentence)
+    if not words:
+        return normalize_title("Quick Learning Boost")
+    title = " ".join(words[:6]).title()
+    return normalize_title(title)
+
+
+def build_hashtags(article: Article, narration: str) -> str:
+    text = f"{article.title} {article.body} {narration}".lower()
+    hashtags: list[str] = ["#Education"]
+
+    keyword_map = [
+        ("#Productivity", ["productivity", "focus", "task", "work", "efficiency"]),
+        ("#SelfImprovement", ["growth", "habit", "mindset", "improve", "goal"]),
+        ("#Technology", ["technology", "ai", "code", "software", "automation", "python"]),
+        ("#StudyTips", ["study", "learn", "education", "teacher", "skill"]),
+        ("#Japan", ["japan", "japanese", "kyoto", "tokyo"]),
+    ]
+
+    for hashtag, keywords in keyword_map:
+        if hashtag == "#Japan" and float(os.environ.get("JAPAN_STYLE_LEVEL", "0")) >= 0.3:
+            hashtags.append(hashtag)
+            continue
+        if any(keyword in text for keyword in keywords):
+            hashtags.append(hashtag)
+
+    deduped: list[str] = []
+    for hashtag in hashtags:
+        if hashtag not in deduped:
+            deduped.append(hashtag)
+    return " ".join(deduped[:3])
+
+
+def build_fallback_metadata(article: Article, narration: str) -> UploadMetadata:
+    title = build_fallback_title(narration)
+    summary = extract_first_sentences(narration, limit=2) or normalize_summary(narration[:220])
+    hashtags = build_hashtags(article, narration)
+    description = f"{article.link}\n\n{summary}\n\n{hashtags}".strip()
+    return UploadMetadata(title=title, description=description)
+
+
+def parse_model_metadata(raw_text: str) -> UploadMetadata | None:
+    cleaned = cleanup_model_text(raw_text)
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if not match:
+        return None
+
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+
+    title = normalize_title(str(payload.get("title", "")))
+    summary = normalize_summary(str(payload.get("summary", "")))
+    hashtags = " ".join(str(payload.get("hashtags", "")).split()).strip()
+
+    if not title or not summary:
+        return None
+
+    description = f"{payload.get('url', '')}\n\n{summary}".strip()
+    if hashtags:
+        description = f"{description}\n\n{hashtags}"
+    return UploadMetadata(title=title, description=description)
+
+
 def generate_upload_metadata(
     article: Article,
     narration: str,
@@ -69,33 +150,24 @@ def generate_upload_metadata(
         "GEMINI_TEXT_MODEL", "gemini-2.5-flash-lite"
     )
 
-    title_prompt = f"""
-Write one compelling YouTube Shorts title in English.
+    metadata_prompt = f"""
+Create YouTube Shorts metadata for an English-speaking audience.
 
-Requirements:
-- Around 30 characters if possible
-- Hook curiosity fast
-- No quotes
-- No emojis
-- Do not include #Shorts
-- Output only the title
+Return valid JSON only using this exact schema:
+{{
+  "title": "catchy title without #Shorts",
+  "summary": "two short English sentences",
+  "hashtags": "#TagOne #TagTwo #TagThree",
+  "url": "{article.link}"
+}}
 
-Article title:
-{article.title}
-
-Narration:
-{narration[:1200]}
-""".strip()
-
-    summary_prompt = f"""
-Write a concise English YouTube description summary for this short video.
-
-Requirements:
-- 2 short sentences
-- Clear and practical
-- No bullet points
-- No hashtags
-- Do not repeat the URL
+Rules:
+- Make the title catchy and click-worthy for global viewers
+- Keep the title concise and natural
+- Do not include #Shorts inside title
+- Summary should be easy to scan and sound native in English
+- Hashtags should be strategic and relevant
+- Include 2 to 3 hashtags, and prefer English hashtags
 
 Article title:
 {article.title}
@@ -107,25 +179,21 @@ Narration:
 {narration[:1200]}
 """.strip()
 
-    title_response = generate_with_retry(
-        client=client,
-        model_name=model_name,
-        prompt=title_prompt,
-    )
-    summary_response = generate_with_retry(
-        client=client,
-        model_name=model_name,
-        prompt=summary_prompt,
-    )
+    try:
+        metadata_response = generate_with_retry(
+            client=client,
+            model_name=model_name,
+            prompt=metadata_prompt,
+            max_attempts=2,
+        )
+        parsed = parse_model_metadata(metadata_response.text or "")
+        if parsed is not None:
+            return parsed
+        print("Gemini metadata response could not be parsed. Using fallback metadata.")
+    except Exception as exc:
+        print(f"Gemini metadata generation failed. Using fallback metadata. Error: {exc}")
 
-    title = normalize_title(title_response.text or "")
-    summary = cleanup_model_text(summary_response.text or "")
-    summary = " ".join(summary.replace("\n", " ").split()).strip()
-    if not summary:
-        summary = narration
-
-    description = f"{article.link}\n\n{summary}"
-    return UploadMetadata(title=title, description=description)
+    return build_fallback_metadata(article, narration)
 
 
 def get_authenticated_youtube_service(
