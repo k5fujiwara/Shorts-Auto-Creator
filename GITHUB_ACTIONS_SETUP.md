@@ -41,3 +41,37 @@ It also supports manual runs through `workflow_dispatch`.
 - `posted_articles.json` is committed back to the repository after successful runs.
 - BGM files must exist in the repository under `bgm/`.
 - If you refresh YouTube auth locally and get a new `token.pickle`, update the matching GitHub secret.
+
+## Recovering from YouTube token expiration
+
+If GitHub Actions fails with the following error, the YouTube OAuth token has expired or was revoked:
+
+```text
+google.auth.exceptions.RefreshError: ('invalid_grant: Token has been expired or revoked.'
+```
+
+Create a new `token.pickle` locally and update the GitHub secret.
+
+Run these commands in PowerShell from the project root:
+
+```powershell
+cd "C:\Users\keigo\OneDrive\デスクトップ\自動化ツール\Shorts-Auto-Creator"
+Remove-Item token.pickle
+python -c "from youtube_uploader import get_authenticated_youtube_service; get_authenticated_youtube_service()"
+Test-Path token.pickle
+```
+
+When the browser opens, sign in with the YouTube account used for uploads and approve access.
+`Test-Path token.pickle` should return `True`.
+
+Convert the new token to Base64:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\Users\keigo\OneDrive\デスクトップ\自動化ツール\Shorts-Auto-Creator\token.pickle"))
+```
+
+Copy the full output and update the GitHub repository secret:
+
+`Settings` -> `Secrets and variables` -> `Actions` -> `YOUTUBE_TOKEN_PICKLE_BASE64` -> `Update`
+
+After updating the secret, run the `Shorts Automation` workflow manually from the `Actions` tab and confirm it succeeds.
