@@ -94,7 +94,7 @@ def log_run_context() -> None:
     print("Run context:")
     print(f"- utc_now: {now_utc.isoformat()}")
     print(f"- jst_now: {now_jst.isoformat()}")
-    print("- target_schedule_jst: around 22:00 for automated runs")
+    print("- target_schedule: every 4 hours for automated runs")
 
 
 def main() -> None:

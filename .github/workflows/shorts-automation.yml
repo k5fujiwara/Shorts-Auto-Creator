@@ -3,10 +3,8 @@ name: Shorts Automation
 on:
   workflow_dispatch:
   schedule:
-    # Approximate US morning, midday, and evening windows.
-    - cron: "0 14 * * *"
-    - cron: "0 18 * * *"
-    - cron: "0 2 * * *"
+    # Run every 4 hours for up to 6 daily Shorts uploads.
+    - cron: "0 */4 * * *"
 
 permissions:
   contents: write

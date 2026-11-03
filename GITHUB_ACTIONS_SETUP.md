@@ -28,11 +28,9 @@ Copy each output and paste it into the matching GitHub repository secret.
 
 ## Workflow schedule
 
-The workflow runs three times per day using UTC:
+The workflow runs every 4 hours using UTC, for up to 6 runs per day:
 
-- `14:00 UTC` for a US morning window
-- `18:00 UTC` for a US midday window
-- `02:00 UTC` for a US evening window
+- `0 */4 * * *`
 
 It also supports manual runs through `workflow_dispatch`.
 
@@ -41,6 +39,7 @@ It also supports manual runs through `workflow_dispatch`.
 - `posted_articles.json` is committed back to the repository after successful runs.
 - BGM files must exist in the repository under `bgm/`.
 - If you refresh YouTube auth locally and get a new `token.pickle`, update the matching GitHub secret.
+- YouTube video uploads consume a large amount of API quota. Six uploads per day is close to the default daily quota, so monitor failures and request a higher YouTube Data API quota if needed.
 
 ## Recovering from YouTube token expiration
 
